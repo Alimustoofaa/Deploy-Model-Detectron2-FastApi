@@ -7,13 +7,12 @@ API prediction container number v1.0 with detectron2
 
 import io
 import cv2
+import base64
 import numpy as np
 from PIL import Image
+from app.crop import crop_img
 from fastapi import FastAPI, File
 from app.prediction import Segmentor
-# from starlette.responses import FileResponse
-# from starlette.responses import StreamingResponse
-from fastapi.encoders import jsonable_encoder
 from fastapi.responses import JSONResponse
 
 model = Segmentor()
@@ -23,6 +22,10 @@ app = FastAPI(title='Prediction Container Number',
               network model Faster RCNN implemented in detectron2 library.''',
               version='1.0')
 
+def encode_image(img):
+    _, buffer = cv2.imencode('.jpg', img)
+    return base64.b64encode(buffer)
+
 # Router prediction image container number
 @app.post('/prediction')
 def prediction_container_number(file: bytes = File(...)):
@@ -31,15 +34,17 @@ def prediction_container_number(file: bytes = File(...)):
     image = np.array(image)
     image = image[:,:,::-1].copy()
     output = model.predict(image)
-    print(type(output))
+
+    if len(output["instances"].to("cpu").pred_boxes) != 0:
+        image =  crop_img(outputs=output, im=image)
+    
+    encoded_image = encode_image(image)
     code = 200 if len(output["instances"].to("cpu").pred_boxes) != 0 else 404
     message = 'Got prediction container number' if code == 200 else 'No predictiron container number'
-    json_compatible_item_data = jsonable_encoder(output)
-    return JSONResponse(
-        content={
-            'status': 'success',
-            'code': code,
-            'message': message,
-            'results': json_compatible_item_data
-        }
-    )
+    
+    return {
+        'status': 'success',
+        'code': code,
+        'message': message,
+        'results': encoded_image 
+    }
